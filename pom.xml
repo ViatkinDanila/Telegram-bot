@@ -15,8 +15,28 @@
 	<description>This is telegram bot for exhange crypto on waves exchanger.</description>
 	<properties>
 		<java.version>17</java.version>
+		<telegram.bot.version>6.5.0</telegram.bot.version>
+		<xchange.version>5.1.0</xchange.version>
 	</properties>
 	<dependencies>
+		<dependency>
+			<groupId>org.telegram</groupId>
+			<artifactId>telegrambots</artifactId>
+			<version>${telegram.bot.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.knowm.xchange</groupId>
+			<artifactId>xchange-core</artifactId>
+			<version>${xchange.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-configuration-processor</artifactId>
+			<optional>true</optional>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
