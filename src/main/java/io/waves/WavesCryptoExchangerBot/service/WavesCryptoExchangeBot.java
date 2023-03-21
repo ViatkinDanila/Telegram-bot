@@ -16,25 +16,31 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import javax.script.ScriptException;
+import java.util.HashMap;
+import java.util.Optional;
 
 @Slf4j
 @Service
 public class WavesCryptoExchangeBot extends TelegramLongPollingBot {
 
     private final Bot bot;
-    private String BTCAssetId = "8LQW8f7P5d5PZM7GtZEBgaqRPGSzS3DfPuiXrURJ4AJS";
-    private String USDTAssetId = "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ";
+    private final String BTCAssetId = "8LQW8f7P5d5PZM7GtZEBgaqRPGSzS3DfPuiXrURJ4AJS";
+    private final String USDTAssetId = "34N9YcEETLWn93qYQ64EsP1x89tSruJU44RrEMSXXEPJ";
+    private final String BTC = " BTC";
+    private final String USDT = " USDT";
+
+    private HashMap<Long, String> chatTrades = new HashMap<>();
 
     private final String rateUrlString = "https://matcher.waves.exchange/matcher/orderbook/" +
             BTCAssetId + "/" +
             USDTAssetId + "/" +
             "status";
 
-    private final String usdtToBtcPaymentUrl = "https://waves.exchange/#send/" +
-            USDTAssetId + "?recipient=3P7HYnjWHoykYxpiTgg6iEAx825zRTJy1vC&amount=100";
+    private final String usdtToBtcPaymentUrl = "https://waves.exchange/withdraw/BTC";
 
-    private final String btcToUsdtPaymentString = "https://waves.exchange/#send/" +
-            BTCAssetId + "?recipient=3P7HYnjWHoykYxpiTgg6iEAx825zRTJy1vC&amount=1";
+    private final String btcToUsdtPaymentUrl = "https://waves.exchange/withdraw/USDT";
+
+    private final String walletAddress = "3P7HYnjWHoykYxpiTgg6iEAx825zRTJy1vC";
 
     private final ReplyKeyboardMaker mainMenuMaker;
 
@@ -54,6 +60,8 @@ public class WavesCryptoExchangeBot extends TelegramLongPollingBot {
     public String getBotToken(){
         return bot.getToken();
     }
+
+
 
     @Override
     public void onUpdateReceived(Update update) {
@@ -78,24 +86,45 @@ public class WavesCryptoExchangeBot extends TelegramLongPollingBot {
                 case "BTC на USDT":
 
                     try {
-                        buyBtcCommandReceived(chatId);
+                        sellBtcCommandReceived(chatId);
                     } catch (TelegramApiException e) {
                         log.error("Error occurred: " + e.getMessage());
                     }
                     break;
                 case "USDT на BTC":
                     try{
-                        buyUsdtCommandReceived(chatId);
+                        sellUsdtCommandReceived(chatId);
                     } catch (TelegramApiException e){
                         log.error("Error occurred: " + e.getMessage());
                     }
                     break;
                 default:
-                    try {
-                        sendMessage(chatId, "Sorry, this command is not supported yet");
-                    } catch (TelegramApiException e) {
-                        log.error("Error occurred: " + e.getMessage());
+                    if (!chatTrades.get(chatId).isEmpty()){
+                        try {
+                            double amount = 0;
+
+                            try{
+                                amount = Double.parseDouble(message);
+                                makePaymentRequest(chatId, amount);
+                            } catch (NumberFormatException e){
+                                sendMessage(chatId, "Enter the number, please");
+                            }
+
+                            if (amount != 0){
+                                makePaymentRequest(chatId, amount);
+                            } else {
+                            }
+                        } catch (TelegramApiException e) {
+                            log.error("Error occurred: " + e.getMessage());
+                        }
+                    } else {
+                        try {
+                            sendMessage(chatId, "Sorry, this command is not supported yet");
+                        } catch (TelegramApiException e) {
+                            log.error("Error occureed: " + e.getMessage());
+                        }
                     }
+
             }
         }
     }
@@ -104,6 +133,52 @@ public class WavesCryptoExchangeBot extends TelegramLongPollingBot {
         sendMessage(chatId, answer);
     }
     private void rateCommandReceived(long chatId) throws TelegramApiException, ScriptException {
+        sendMessage(chatId, makeRateMessage(makeRateRequest().get()).toString());
+    }
+
+    private StringBuilder makeRateMessage(StringBuilder rate){
+        return new StringBuilder("The current rate BTC/USDT: " + rate);
+    }
+
+    private StringBuilder normalizeRate(StringBuilder rate){
+        return rate.delete(rate.length()-7, rate.length()-1);
+    }
+
+    private void sellBtcCommandReceived(long chatId) throws TelegramApiException {
+        chatTrades.put(chatId, USDT);
+        String message = "Enter amount of BTC changing to USDT";
+        sendMessage(chatId, message);
+    }
+
+    private void sellUsdtCommandReceived(long chatId) throws TelegramApiException {
+        chatTrades.put(chatId, BTC);
+        String message = "Enter amount of USDT changing to BTC";
+        sendMessage(chatId, message);
+    }
+
+    private void makePaymentRequest(long chatId, double amount) throws TelegramApiException{
+        StringBuilder rate = makeRateRequest().get();
+        double rateDouble = Double.parseDouble(rate.toString());
+        StringBuilder message = makeRateMessage(rate);
+        String asset = chatTrades.get(chatId);
+        message.append("\nYou'll receive ");
+        if (chatTrades.get(chatId).equals(BTC)){
+            message.append(amount/rateDouble);
+            message.append(asset);
+            message.append("\nWaves.Exchange payment available by this link: ");
+            message.append(usdtToBtcPaymentUrl);
+        } else {
+            message.append(amount * rateDouble);
+            message.append(asset);
+            message.append("\nWaves.Exchange payment available by this link: ");
+            message.append(btcToUsdtPaymentUrl);
+        }
+        message.append("\nWallet address to deposit " + asset + " on Waves.Exchange is :\n" + walletAddress);
+        sendMessage(chatId, message.toString());
+        chatTrades.remove(chatId);
+    }
+
+    private Optional<StringBuilder> makeRateRequest(){
         RestTemplate restTemplate = new RestTemplate();
         ResponseEntity<String> response = restTemplate.getForEntity(rateUrlString, String.class);
         String body = response.getBody();
@@ -115,22 +190,11 @@ public class WavesCryptoExchangeBot extends TelegramLongPollingBot {
         } catch (JsonProcessingException e) {
             log.error("Error occurred: " + e.getMessage());
         }
-        sendMessage(chatId, makeRateMessage(rate));
-    }
-
-    private String makeRateMessage(StringBuilder rate){
-        rate.delete(rate.length() - 7, rate.length()-1);
-        return "The current rate of 1 BTC: " + rate + " USDT";
-    }
-
-    private void buyBtcCommandReceived(long chatId) throws TelegramApiException {
-        String message = "Please click on this link to buy BTC: " + btcToUsdtPaymentString;
-        sendMessage(chatId, message);
-    }
-
-    private void buyUsdtCommandReceived(long chatId) throws TelegramApiException {
-        String message = "Please click on this link to buy USDT: " + usdtToBtcPaymentUrl;
-        sendMessage(chatId, message);
+        Optional<StringBuilder> rateOptional = Optional.empty();
+        if(rate != null){
+            rateOptional = Optional.of(normalizeRate(rate));
+        }
+        return rateOptional;
     }
 
     private void sendMessage(long chatId, String textToSend) throws TelegramApiException {
